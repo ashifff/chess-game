@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimalist Chess</title>
+    <style>
+        :root {
+            --bg-color: #1e1e24;
+            --text-color: #f4f4f6;
+            --light-sq: #ebecd0;
+            --dark-sq: #739552;
+            --highlight: rgba(255, 255, 51, 0.5);
+            --valid-move: rgba(0, 0, 0, 0.2);
+            --check-bg: #e74c3c;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        h1 { margin-bottom: 10px; font-weight: 500; }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            width: 480px;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+            background: #2b2b36;
+            padding: 10px 15px;
+            border-radius: 8px;
+            box-sizing: border-box;
+        }
+
+        #board {
+            display: grid;
+            grid-template-columns: repeat(8, 60px);
+            grid-template-rows: repeat(8, 60px);
+            border: 4px solid #3c3c4a;
+            border-radius: 4px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+
+        .square {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 42px;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+
+        .light { background-color: var(--light-sq); }
+        .dark { background-color: var(--dark-sq); }
+        .selected { background-color: var(--highlight) !important; }
+        .in-check { background-color: var(--check-bg) !important; }
+
+        .valid-dot::after {
+            content: '';
+            width: 18px;
+            height: 18px;
+            background-color: var(--valid-move);
+            border-radius: 50%;
+            position: absolute;
+        }
+
+        .valid-capture::after {
+            content: '';
+            width: 48px;
+            height: 48px;
+            border: 4px solid var(--valid-move);
+            border-radius: 50%;
+            position: absolute;
+        }
+
+        .piece-white { color: #ffffff; text-shadow: 0 2px 3px rgba(0,0,0,0.6); }
+        .piece-black { color: #111111; }
+
+        button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 1rem;
+            background-color: #739552;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover { background-color: #5d7a41; }
+
+        @media (max-width: 520px) {
+            #board {
+                grid-template-columns: repeat(8, 42px);
+                grid-template-rows: repeat(8, 42px);
+            }
+            .square { width: 42px; height: 42px; font-size: 30px; }
+            .status-bar { width: 344px; font-size: 0.95rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Chess</h1>
+    <div class="status-bar">
+        <span id="turn-indicator">Turn: White</span>
+        <span id="game-status"></span>
+    </div>
+
+    <div id="board"></div>
+    <button onclick="resetGame()">Restart Game</button>
+
+    <script>
+        const boardEl = document.getElementById('board');
+        const turnEl = document.getElementById('turn-indicator');
+        const statusEl = document.getElementById('game-status');
+
+        const PIECES = {
+            wK: '♔', wQ: '♕', wR: '♖', wB: '♗', wN: '♘', wP: '♙',
+            bK: '♚', bQ: '♛', bR: '♜', bB: '♝', bN: '♞', bP: '♟'
+        };
+
+        let board = [];
+        let turn = 'w';
+        let selectedSq = null;
+        let validMoves = [];
+        let gameOver = false;
+
+        function initBoard() {
+            board = [
+                ['bR','bN','bB','bQ','bK','bB','bN','bR'],
+                ['bP','bP','bP','bP','bP','bP','bP','bP'],
+                ['','','','','','','',''],
+                ['','','','','','','',''],
+                ['','','','','','','',''],
+                ['','','','','','','',''],
+                ['wP','wP','wP','wP','wP','wP','wP','wP'],
+                ['wR','wN','wB','wQ','wK','wB','wN','wR']
+            ];
+            turn = 'w';
+            selectedSq = null;
+            validMoves = [];
+            gameOver = false;
+            statusEl.textContent = '';
+            updateTurnUI();
+            renderBoard();
+        }
+
+        function renderBoard() {
+            boardEl.innerHTML = '';
+            const inCheckKing = isKingInCheck(turn, board) ? findKing(turn, board) : null;
+
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const sq = document.createElement('div');
+                    sq.className = `square ${(r + c) % 2 === 0 ? 'light' : 'dark'}`;
+                    
+                    if (selectedSq && selectedSq.r === r && selectedSq.c === c) {
+                        sq.classList.add('selected');
+                    }
+
+                    if (inCheckKing && inCheckKing.r === r && inCheckKing.c === c) {
+                        sq.classList.add('in-check');
+                    }
+
+                    const move = validMoves.find(m => m.r === r && m.c === c);
+                    if (move) {
+                        sq.classList.add(board[r][c] ? 'valid-capture' : 'valid-dot');
+                    }
+
+                    const piece = board[r][c];
+                    if (piece) {
+                        const span = document.createElement('span');
+                        span.textContent = PIECES[piece];
+                        span.className = piece[0] === 'w' ? 'piece-white' : 'piece-black';
+                        sq.appendChild(span);
+                    }
+
+                    sq.addEventListener('click', () => handleSquareClick(r, c));
+                    boardEl.appendChild(sq);
+                }
+            }
+        }
+
+        function handleSquareClick(r, c) {
+            if (gameOver) return;
+
+            const move = validMoves.find(m => m.r === r && m.c === c);
+            if (move && selectedSq) {
+                makeMove(selectedSq.r, selectedSq.c, r, c);
+                selectedSq = null;
+                validMoves = [];
+                renderBoard();
+                return;
+            }
+
+            const piece = board[r][c];
+            if (piece && piece[0] === turn) {
+                selectedSq = { r, c };
+                validMoves = getLegalMoves(r, c, board);
+            } else {
+                selectedSq = null;
+                validMoves = [];
+            }
+            renderBoard();
+        }
+
+        function makeMove(fromR, fromC, toR, toC) {
+            const piece = board[fromR][fromC];
+            board[toR][toC] = piece;
+            board[fromR][fromC] = '';
+
+            // Auto-promote pawn to Queen
+            if (piece === 'wP' && toR === 0) board[toR][toC] = 'wQ';
+            if (piece === 'bP' && toR === 7) board[toR][toC] = 'bQ';
+
+            turn = turn === 'w' ? 'b' : 'w';
+            updateTurnUI();
+            checkGameEnd();
+        }
+
+        function updateTurnUI() {
+            turnEl.textContent = `Turn: ${turn === 'w' ? 'White' : 'Black'}`;
+        }
+
+        function checkGameEnd() {
+            let hasMoves = false;
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (board[r][c] && board[r][c][0] === turn) {
+                        if (getLegalMoves(r, c, board).length > 0) {
+                            hasMoves = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!hasMoves) {
+                gameOver = true;
+                if (isKingInCheck(turn, board)) {
+                    statusEl.textContent = `Checkmate! ${turn === 'w' ? 'Black' : 'White'} wins!`;
+                } else {
+                    statusEl.textContent = 'Stalemate! Draw.';
+                }
+            } else if (isKingInCheck(turn, board)) {
+                statusEl.textContent = 'Check!';
+            } else {
+                statusEl.textContent = '';
+            }
+        }
+
+        function getLegalMoves(r, c, currentBoard) {
+            const pseudoMoves = getPseudoMoves(r, c, currentBoard);
+            const color = currentBoard[r][c][0];
+            return pseudoMoves.filter(m => {
+                const copy = currentBoard.map(row => [...row]);
+                copy[m.r][m.c] = copy[r][c];
+                copy[r][c] = '';
+                return !isKingInCheck(color, copy);
+            });
+        }
+
+        function getPseudoMoves(r, c, b) {
+            const piece = b[r][c];
+            if (!piece) return [];
+            const color = piece[0];
+            const type = piece[1];
+            const moves = [];
+
+            const addIfValid = (nr, nc) => {
+                if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+                    if (!b[nr][nc] || b[nr][nc][0] !== color) {
+                        moves.push({ r: nr, c: nc });
+                        return !b[nr][nc];
+                    }
+                }
+                return false;
+            };
+
+            const slide = (dirs) => {
+                dirs.forEach(([dr, dc]) => {
+                    let nr = r + dr, nc = c + dc;
+                    while (addIfValid(nr, nc)) {
+                        nr += dr; nc += dc;
+                    }
+                });
+            };
+
+            if (type === 'P') {
+                const dir = color === 'w' ? -1 : 1;
+                const startRow = color === 'w' ? 6 : 1;
+                if (r + dir >= 0 && r + dir < 8 && !b[r + dir][c]) {
+                    moves.push({ r: r + dir, c });
+                    if (r === startRow && !b[r + 2 * dir][c]) {
+                        moves.push({ r: r + 2 * dir, c });
+                    }
+                }
+                [-1, 1].forEach(dc => {
+                    const nr = r + dir, nc = c + dc;
+                    if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && b[nr][nc] && b[nr][nc][0] !== color) {
+                        moves.push({ r: nr, c: nc });
+                    }
+                });
+            } else if (type === 'R') {
+                slide([[1,0],[-1,0],[0,1],[0,-1]]);
+            } else if (type === 'B') {
+                slide([[1,1],[1,-1],[-1,1],[-1,-1]]);
+            } else if (type === 'Q') {
+                slide([[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]);
+            } else if (type === 'N') {
+                [[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]].forEach(([dr, dc]) => addIfValid(r + dr, c + dc));
+            } else if (type === 'K') {
+                [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([dr, dc]) => addIfValid(r + dr, c + dc));
+            }
+            return moves;
+        }
+
+        function findKing(color, b) {
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (b[r][c] === `${color}K`) return { r, c };
+                }
+            }
+            return null;
+        }
+
+        function isKingInCheck(color, b) {
+            const king = findKing(color, b);
+            if (!king) return false;
+            const enemy = color === 'w' ? 'b' : 'w';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (b[r][c] && b[r][c][0] === enemy) {
+                        const moves = getPseudoMoves(r, c, b);
+                        if (moves.some(m => m.r === king.r && m.c === king.c)) return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function resetGame() {
+            initBoard();
+        }
+
+        initBoard();
+    </script>
+</body>
+</html>
